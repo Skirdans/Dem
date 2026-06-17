@@ -1,0 +1,286 @@
+Samba DC (BR-SRV)
+
+apt-get install task-samba-dc -y
+
+samba-tool domain provision --use-rfc2307 --interactive
+Realm:                AU-TEAM.IRPO
+Domain:               AU-TEAM
+Server Role:          dc
+DNS backend:          SAMBA_INTERNAL
+DNS forwarder IP:     8.8.8.8
+Administrator password: P@ssw0rd
+
+cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
+
+systemctl enable --now samba
+samba-tool domain info 127.0.0.1
+
+samba-tool group add hq
+
+samba-tool user create user1hq P@ssw0rd
+samba-tool user create user2hq P@ssw0rd
+samba-tool user create user3hq P@ssw0rd
+samba-tool user create user4hq P@ssw0rd
+samba-tool user create user5hq P@ssw0rd
+
+samba-tool group addmembers hq user1hq
+samba-tool group addmembers hq user2hq
+samba-tool group addmembers hq user3hq
+samba-tool group addmembers hq user4hq
+samba-tool group addmembers hq user5hq
+
+samba-tool group listmembers hq
+
+# users.csv (format username;password)
+cat /opt/users.csv
+# sozdat' kazhdogo polzovatelya iz fayla kak v razdele vyshe
+
+vim /etc/sudoers.d/hq
+%hq ALL=(ALL) /bin/cat, /bin/grep, /usr/bin/id
+
+chmod 400 /etc/sudoers.d/hq
+
+# --- HQ-CLI: vvod v domen ---
+apt-get install task-auth-ad-sssd -y
+
+vim /etc/krb5.conf
+[libdefaults]
+    default_realm = AU-TEAM.IRPO
+    dns_lookup_realm = false
+    dns_lookup_kdc = false
+[realms]
+AU-TEAM.IRPO = {
+    kdc = br-srv.au-team.irpo
+    kdc = 192.168.4.2
+    admin_server = br-srv.au-team.irpo
+    admin_server = 192.168.4.2
+}
+[domain_realm]
+.au-team.irpo = AU-TEAM.IRPO
+au-team.irpo = AU-TEAM.IRPO
+
+realm join AU-TEAM.IRPO -U administrator
+realm permit -g hq
+id user1hq@au-team.irpo
+
+================================================================
+
+RAID5 + NFS (HQ-SRV)
+
+lsblk
+
+apt-get install mdadm -y
+mdadm --create /dev/md0 -l5 -n3 /dev/sdb /dev/sdc /dev/sdd
+
+mkfs.ext4 /dev/md0
+
+mkdir /etc/mdadm
+echo "DEVICE partitions" > /etc/mdadm/mdadm.conf
+mdadm --detail --scan >> /etc/mdadm/mdadm.conf
+cat /etc/mdadm/mdadm.conf
+
+mkdir /raid5
+vim /etc/fstab
+/dev/md0  /raid5  ext4  defaults  0  0
+mount -av
+
+apt-get install nfs-server nfs-utils -y
+mkdir /raid5/nfs
+chmod 777 /raid5/nfs
+
+vim /etc/exports
+/raid5/nfs  192.168.2.0/28(rw,no_root_squash,sync)
+
+systemctl enable --now nfs-server
+showmount -e localhost
+
+# --- HQ-CLI: klient NFS ---
+apt-get install nfs-utils -y
+mkdir /mnt/nfs
+chmod 777 /mnt/nfs
+vim /etc/fstab
+192.168.1.2:/raid5/nfs  /mnt/nfs  nfs  defaults  0  0
+mount -av
+df -h | grep nfs
+
+================================================================
+
+Chrony
+
+# --- HQ-RTR (server) ---
+apt-get install chrony -y
+vim /etc/chrony.conf
+server 127.127.1.0 iburst
+local stratum 5
+allow all
+systemctl enable --now chronyd
+
+# --- HQ-SRV, BR-SRV, HQ-CLI, BR-RTR (klienty) ---
+apt-get install chrony -y
+vim /etc/chrony.conf
+server 192.168.1.1 iburst
+systemctl restart chronyd
+chronyc sources
+
+================================================================
+
+Ansible (BR-SRV)
+
+apt-get install ansible sshpass -y
+
+vim /etc/ansible/hosts
+[all]
+hq-srv ansible_host=192.168.1.2 ansible_user=sshuser ansible_ssh_pass=P@ssw0rd ansible_port=2024
+hq-cli ansible_host=192.168.2.10 ansible_user=sshuser ansible_ssh_pass=P@ssw0rd ansible_port=2024
+hq-rtr ansible_host=192.168.1.1 ansible_user=net_admin ansible_ssh_pass=P@$$word
+br-rtr ansible_host=10.0.0.1 ansible_user=net_admin ansible_ssh_pass=P@$$word
+
+vim /etc/ansible/ansible.cfg
+[defaults]
+inventory = /etc/ansible/hosts
+host_key_checking = False
+interpreter_python = /usr/bin/python3
+
+ansible all -m ping
+
+================================================================
+
+Docker + MediaWiki (BR-SRV)
+
+apt-get install docker-engine docker-compose -y
+systemctl enable --now docker
+
+vim /root/wiki.yml
+services:
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=toor
+      - MYSQL_DATABASE=mediawiki
+      - MYSQL_USER=wiki
+      - MYSQL_PASSWORD=WikiP@ssw0rd
+  wiki:
+    image: mediawiki:latest
+    container_name: wiki
+    ports:
+      - "8080:80"
+    depends_on:
+      - mariadb
+    # volumes:
+    #   - /root/mediawiki/LocalSettings.php:/var/www/html/LocalSettings.php
+
+docker compose -f /root/wiki.yml up -d
+docker ps
+
+# --- HQ-CLI: ustanovka cherez brauzer ---
+http://192.168.4.2:8080/mw-config/
+DB host: mariadb
+DB name: mediawiki
+DB user: wiki
+DB pass: WikiP@ssw0rd
+
+# --- posle skachivaniya LocalSettings.php ---
+mkdir /root/mediawiki
+# polozhit' LocalSettings.php v /root/mediawiki/
+
+vim /root/wiki.yml
+    volumes:
+      - /root/mediawiki/LocalSettings.php:/var/www/html/LocalSettings.php
+
+docker compose -f /root/wiki.yml stop
+docker compose -f /root/wiki.yml up -d
+
+================================================================
+
+Probros portov
+
+# --- HQ-RTR ---
+iptables -t nat -A PREROUTING -i ens19 -p tcp --dport 2024 -j DNAT --to-destination 192.168.1.2:2024
+iptables-save > /etc/sysconfig/iptables
+
+# --- BR-RTR ---
+iptables -t nat -A PREROUTING -i ens19 -p tcp --dport 2024 -j DNAT --to-destination 192.168.4.2:2024
+iptables -t nat -A PREROUTING -i ens19 -p tcp --dport 80 -j DNAT --to-destination 192.168.4.2:8080
+iptables-save > /etc/sysconfig/iptables
+
+================================================================
+
+Moodle (HQ-SRV)
+
+apt-get install apache2 php8.2 apache2-mods apache2-mod_php8.2 php8.2-libs mariadb-server php8.2-opcache php8.2-curl php8.2-gd php8.2-intl php8.2-mysqlnd-mysqli php8.2-xmlrpc php8.2-zip php8.2-soap php8.2-mbstring php8.2-xmlreader php8.2-fileinfo php8.2-sodium -y
+
+systemctl enable --now httpd2 mariadb
+
+mariadb -u root
+create database moodle;
+create user moodle identified by 'P@ssw0rd';
+grant all privileges on moodle.* to moodle;
+flush privileges;
+exit;
+
+wget https://download.moodle.org/download.php/direct/stable405/moodle-latest-405.tgz
+tar -xf moodle-latest-405.tgz
+mv moodle /var/www/html/
+mkdir /var/www/moodledata
+chown -R apache2:apache2 /var/www/html /var/www/moodledata
+rm /var/www/html/index.html
+
+vim /etc/httpd2/conf/sites-available/default.conf
+DocumentRoot /var/www/html/moodle
+
+vim /etc/php/8.2/apache2-mod_php/php.ini
+max_input_vars = 5000
+
+systemctl restart httpd2
+
+# --- HQ-CLI: ustanovka cherez brauzer ---
+http://192.168.1.2/install.php
+DB type: MariaDB
+Host: localhost
+DB name: moodle
+User: moodle
+Pass: P@ssw0rd
+# admin pass: P@ssw0rd
+
+# esli prosit ispravit' tip BD:
+vim /var/www/html/moodle/config.php
+$CFG->dbtype = 'mariadb';
+
+================================================================
+
+Nginx reverse proxy (HQ-RTR)
+
+apt-get install nginx -y
+
+vim /etc/nginx/nginx.conf
+# dobavit' vnutr' http { }:
+server {
+    listen 80;
+    server_name moodle.au-team.irpo;
+    location / {
+        proxy_pass http://192.168.1.2:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+server {
+    listen 80;
+    server_name wiki.au-team.irpo;
+    location / {
+        proxy_pass http://192.168.4.2:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+
+systemctl enable --now nginx
+curl http://moodle.au-team.irpo
+curl http://wiki.au-team.irpo
+
+================================================================
+
+Yandex Browser (HQ-CLI)
+
+apt-get install yandex-browser-stable -y
