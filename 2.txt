@@ -63,7 +63,6 @@ realm join AU-TEAM.IRPO -U administrator
 realm permit -g hq
 id user1hq@au-team.irpo
 
-================================================================
 
 RAID5 + NFS (HQ-SRV)
 
@@ -103,7 +102,6 @@ vim /etc/fstab
 mount -av
 df -h | grep nfs
 
-================================================================
 
 Chrony
 
@@ -122,7 +120,6 @@ server 192.168.1.1 iburst
 systemctl restart chronyd
 chronyc sources
 
-================================================================
 
 Ansible (BR-SRV)
 
@@ -143,7 +140,6 @@ interpreter_python = /usr/bin/python3
 
 ansible all -m ping
 
-================================================================
 
 Docker + MediaWiki (BR-SRV)
 
@@ -192,7 +188,6 @@ vim /root/wiki.yml
 docker compose -f /root/wiki.yml stop
 docker compose -f /root/wiki.yml up -d
 
-================================================================
 
 Probros portov
 
@@ -205,7 +200,6 @@ iptables -t nat -A PREROUTING -i ens19 -p tcp --dport 2024 -j DNAT --to-destinat
 iptables -t nat -A PREROUTING -i ens19 -p tcp --dport 80 -j DNAT --to-destination 192.168.4.2:8080
 iptables-save > /etc/sysconfig/iptables
 
-================================================================
 
 Moodle (HQ-SRV)
 
@@ -248,7 +242,6 @@ Pass: P@ssw0rd
 vim /var/www/html/moodle/config.php
 $CFG->dbtype = 'mariadb';
 
-================================================================
 
 Nginx reverse proxy (HQ-RTR)
 
