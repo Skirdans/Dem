@@ -1,1 +1,307 @@
 # Dem
+
+hostnamectl set-hostname ISP.au-team.irpo; exec bash
+ip -c -br a
+cd /etc/net/ifaces/enp7s1
+ipv4address:
+ipv4route: default via 10.0.1.1
+resolv.conf: nameserver 8.8.8.8
+options:
+ONBOOT=yes
+TYPE=eth
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+SYSTEMD_BOOTPROTO=static
+SYSTEMD_CONTROLLED=no
+CONFIG_WIRELESS=no
+systemctl restart network
+ping ya.ru
+apt-get update
+apt-get install iptables -y
+/etc/net/sysctl.conf:
+net.ipv4.ip_forward = 1
+sysctl -p
+cp -rf enp7s1/ enp7s2
+cp -rf enp7s1/ enp7s3
+enp7s2 (H):
+ipv4address: 172.16.1.1/28
+ipv4route: 172.16.1.1/28 via 172.16.1.2/28
+enp7s3 (B):
+ipv4address: 172.16.2.1/28
+ipv4route: 172.16.2.1/28 via 172.16.2.2/28
+systemctl restart network
+iptables -t nat -A POSTROUTING -o enp7s1 -j MASQUERADE
+iptables-save > /etc/sysconfig/iptables
+systemctl enable iptables
+systemctl start iptables
+H
+hostnamectl set-hostname hq-rtr.au-team.irpo; exec bash
+mkdir -p /etc/net/ifaces/enp7s1
+cd /etc/net/ifaces/enp7s1
+ipv4address: 172.16.1.2/28
+ipv4route: default via 172.16.1.1
+resolv.conf: nameserver 8.8.8.8
+options:
+ONBOOT=yes
+TYPE=eth
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+SYSTEMD_BOOTPROTO=static
+SYSTEMD_CONTROLLED=no
+CONFIG_WIRELESS=no
+enp7s2:
+ipv4route: default via 172.16.1.1/28
+options:
+ONBOOT=yes
+TYPE=eth
+DISABLED=no
+CONFIG_IPV4=no
+systemctl restart network
+apt-get update
+apt-get install iptables frr dnsmasq sudo -y
+/etc/net/sysctl.conf:
+net.ipv4.ip_forward = 1
+sysctl -p
+iptables -t nat -A POSTROUTING -o enp7s1 -j MASQUERADE
+iptables-save > /etc/sysconfig/iptables
+systemctl enable iptables
+systemctl start iptables
+VLAN 100 (S):
+mkdir -p /etc/net/ifaces/vlan100
+cd /etc/net/ifaces/vlan100
+ipv4address: 192.168.1.1/27
+options:
+ONBOOT=yes
+TYPE=vlan
+VID=100
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+HOST=enp7s2
+cp -rf vlan100 vlan200
+cp -rf vlan100 vlan999
+VLAN 200 (C):
+- ipv4address: 192.168.2.1/28
+- options: VID=200
+VLAN 999:
+- ipv4address: 192.168.3.1/29
+- options: VID=999
+
+systemctl restart network
+
+/etc/dnsmasq.conf (dobavit' v konets):
+interface=vlan200
+dhcp-range=192.168.2.10,192.168.2.14,12h
+dhcp-option=3,192.168.2.1
+dhcp-option=6,192.168.1.2,8.8.8.8
+dhcp-option=15,au-team.irpo
+
+systemctl restart dnsmasq
+systemctl enable dnsmasq
+
+mkdir -p /etc/net/ifaces/gre1
+cd /etc/net/ifaces/gre1
+- Fayl ipv4address: 10.10.10.1/30
+- Fayl ipv4route: 192.164.4.0/27 via 10.10.10.2
+- Fayl options:
+ONBOOT=yes
+TYPE=iptun
+TUNTYPE=gre
+TUNLOCAL=172.16.1.2
+TUNREMOTE=172.16.2.2
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+HOST=enp7s1
+
+reboot
+
+================================================================
+
+HQ-SRV
+
+hostnamectl set-hostname hq-srv.au-team.irpo; exec bash
+
+cd /etc/net/ifaces/enp7s1
+- Fayl ipv4address: 192.168.1.2/28
+- Fayl ipv4route: default via 192.168.1.1
+- Fayl resolv.conf: nameserver 8.8.8.8
+- Fayl options:
+ONBOOT=yes
+TYPE=eth
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+SYSTEMD_BOOTPROTO=static
+SYSTEMD_CONTROLLED=no
+CONFIG_WIRELESS=no
+systemctl restart network
+HC
+hostnamectl set-hostname hq-cli.au-team.irpo; exec bash
+systemctl stop NetworkManager
+systemctl disable NetworkManager
+mkdir -p /etc/net/ifaces/ens19
+cd /etc/net/ifaces/ens19
+options:
+ONBOOT=yes
+DISABLED=no
+BOOTPROTO=dhcp
+TYPE=eth
+NM_CONTROLLED=no
+systemctl restart network
+ip -c -br a
+cat /etc/resolv.conf
+ping ya.ru
+BR
+hostnamectl set-hostname br-rtr.au-team.irpo; exec bash
+cd /etc/net/ifaces/enp7s1
+ipv4address: 172.16.2.2/28
+ipv4route: default via 172.16.2.1
+resolv.conf: nameserver 8.8.8.8
+options:
+ONBOOT=yes
+TYPE=eth
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+SYSTEMD_BOOTPROTO=static
+SYSTEMD_CONTROLLED=no
+CONFIG_WIRELESS=no
+cp /etc/net/ifaces/enp7s1 enp7s2/
+cd /etc/net/ifaces/enp7s2
+ipv4address: 192.168.4.1/28
+ipv4route: 192.168.4.0/28 via 192.168.4.2/28
+apt-get update
+apt-get install iptables sudo -y
+/etc/net/sysctl.conf:
+net.ipv4.ip_forward = 1
+sysctl -p
+iptables -t nat -A POSTROUTING -o enp7s1 -j MASQUERADE
+iptables-save > /etc/sysconfig/iptables
+systemctl enable iptables
+systemctl start iptables
+systemctl restart network
+mkdir -p /etc/net/ifaces/gre1
+cd /etc/net/ifaces/gre1
+- Fayl ipv4address: 10.10.10.2/30
+- Fayl ipv4route:
+192.168.1.0/27 via 10.10.10.1
+192.168.2.0/26 via 10.10.10.1
+192.168.3.0/29 via 10.10.10.1
+options:
+ONBOOT=yes
+TYPE=iptun
+TUNTYPE=gre
+TUNLOCAL=172.16.2.2
+TUNREMOTE=172.16.1.2
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+HOST=enp7s1
+reboot
+BS
+hostnamectl set-hostname br-srv.au-team.irpo; exec bash
+cd /etc/net/ifaces/enp7s1
+ipv4address: 192.168.4.2/28
+ipv4route: default via 192.168.4.1
+resolv.conf: nameserver 8.8.8.8
+options:
+ONBOOT=yes
+TYPE=eth
+DISABLED=no
+CONFIG_IPV4=yes
+BOOTPROTO=static
+SYSTEMD_BOOTPROTO=static
+SYSTEMD_CONTROLLED=no
+CONFIG_WIRELESS=no
+systemctl restart network
+
+HS i BS:
+useradd -u 1010 sshuser
+passwd sshuser
+# P@ssw0rd
+usermod -aG wheel sshuser
+visudo
+WHEEL  ALL=(ALL:ALL) NOPASSWD: ALL
+su - sshuser
+id
+sudo whoami
+HR i BR:
+useradd net_admin
+passwd net_admin
+# P@$$word
+usermod -aG wheel net_admin
+su - net_admin
+sudo whoami
+SSH (HS i BS)
+/etc/openssh/sshd_config:
+Port 2024
+AllowUsers sshuser
+MaxAuthTries 2
+PasswordAuthentication yes
+Banner /etc/openssh/banner
+/etc/openssh/banner:
+Authorized access only
+systemctl restart sshd
+ssh -p 2024 sshuser@192.168.1.2
+ssh -p 2024 root@192.168.1.2
+DNS (B) HS
+apt-get install bind -y
+/var/lib/bind/etc/options.conf:
+# zakinclude "/etc/bind/resolvconf-options.conf";
+options {
+    listen-on { 192.168.1.2; 127.0.0.1; };
+    forwarders { 8.8.8.8; };
+    allow-query { any; };
+    recursion yes;
+};
+/var/lib/bind/etc/rfc1912.conf (dobavit' v konets):
+zone "au-team.irpo" {
+    type master;
+    file "au-team.irpo";
+    allow-update { none; };
+};
+
+zone "1.168.192.in-addr.arpa" {
+    type master;
+    file "rev";
+    allow-update { none; };
+};
+
+cd /var/lib/bind/etc/zone
+cp localhost au-team.irpo
+
+/var/lib/bind/etc/zone/au-team.irpo:
+$TTL 1D
+@   IN SOA hq-srv.au-team.irpo. root. (1 1H 15M 1W 1H)
+    IN NS  hq-srv.au-team.irpo.
+
+hq-rtr  IN A 192.168.1.1
+hq-srv  IN A 192.168.1.2
+hq-cli  IN A 192.168.2.10
+br-rtr  IN A 172.16.2.2
+br-srv  IN A 192.168.4.2
+
+cp localhost rev
+
+/var/lib/bind/etc/zone/rev:
+$TTL 1D
+@   IN SOA hq-srv.au-team.irpo. root. (1 1H 15M 1W 1H)
+    IN NS  hq-srv.au-team.irpo.
+
+1   IN PTR hq-rtr.au-team.irpo.
+2   IN PTR hq-srv.au-team.irpo.
+10  IN PTR hq-cli.au-team.irpo.
+
+chgrp named /var/lib/bind/etc/zone/*
+chmod 644 /var/lib/bind/etc/zone/*
+named-checkconf
+named-checkconf -z
+
+systemctl enable bind
+systemctl restart bind
+systemctl status bind
+nslookup 192.168.1.1
+ping moodle.au-team.irpo
